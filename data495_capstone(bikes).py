@@ -44,7 +44,10 @@ df['Trip Route Category'] = df['Trip Route Category'].astype('category')
 
 df.head(5)
 
-"""# **2. Data Visualization**"""
+"""# **2. Data Visualization**
+
+## **2.1 Visualization 1**
+"""
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -83,28 +86,33 @@ sns.despine()
 plt.tight_layout()
 plt.show()
 
+"""## **2.2 Visualization 2**"""
+
+# Create summary DataFrame for plotting
+passholder_counts = df['Passholder Type'].value_counts().reset_index()
+passholder_counts.columns = ['Passholder_Type', 'Trip_Count']  # Renamed for clarity
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Clean style
 sns.set_style("whitegrid")
 
-# Sort by trip count
-passholder_counts = passholder_counts.sort_values(by='Trip Count', ascending=False).reset_index(drop=True)
+# Sort
+passholder_counts = passholder_counts.sort_values(by='Trip_Count', ascending=False).reset_index(drop=True)
 
-# Plot setup
+# Plot
 plt.figure(figsize=(10, 6))
 colors = sns.color_palette('muted')
 
-# Barplot with categories on x-axis
 barplot = sns.barplot(
     data=passholder_counts,
-    x='Passholder Type',
-    y='Trip Count',
+    x='Passholder_Type',
+    y='Trip_Count',
     palette=colors
 )
 
-# Add value labels on top of bars using category positions, not index
+# Annotate bars
 for p in barplot.patches:
     height = p.get_height()
     barplot.annotate(
@@ -116,17 +124,100 @@ for p in barplot.patches:
         fontweight='bold'
     )
 
-# Labels and title
+# Labels
 plt.title('📊 Number of Trips by Passholder Type', fontsize=16, fontweight='bold')
 plt.xlabel('')
 plt.ylabel('Number of Trips')
 plt.xticks(rotation=10, fontsize=11)
 plt.yticks(fontsize=11)
 
-# Final clean-up
 sns.despine()
 plt.tight_layout()
 plt.show()
+
+"""## **2.3 Visualization 3**"""
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Convert 'Start Time' to datetime and extract day of week
+df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
+df['Day of Week'] = df['Start Time'].dt.day_name()
+
+# Group by Day of Week and Passholder Type
+dow_passholder = df.groupby(['Day of Week', 'Passholder Type']).size().unstack().reindex(
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+)
+
+# Create figure and plot
+plt.figure(figsize=(14, 8))
+ax = dow_passholder.plot(
+    kind='bar',
+    stacked=True,
+    colormap='tab20c',
+    edgecolor='black',
+    figsize=(14, 8)
+)
+
+# Customize title and labels
+plt.title('Trips by Day of the Week and Passholder Type', fontsize=16, fontweight='bold')
+plt.xlabel('Day of Week', fontsize=14)
+plt.ylabel('Number of Trips', fontsize=14)
+plt.xticks(rotation=45, fontsize=12)
+plt.yticks(fontsize=12)
+
+# Move legend outside the plot
+plt.legend(
+    title='Passholder Type',
+    bbox_to_anchor=(1.05, 1),
+    loc='upper left',
+    borderaxespad=0.
+)
+
+# Grid and layout
+plt.grid(axis='y', linestyle='--', alpha=0.5)
+plt.tight_layout()
+
+# Show the plot
+plt.show()
+
+import kagglehub
+import pandas as pd
+import os
+
+path = kagglehub.dataset_download("cityofLA/los-angeles-metro-bike-share-trip-data")
+print("Path to dataset files:", path)
+
+files = os.listdir(path)
+print("Files in dataset:", files)
+
+for file in files:
+    if file.endswith(".csv"):
+        dataset_path = os.path.join(path, file)
+        df = pd.read_csv(dataset_path)
+        print(f"Loaded file: {file}")
+        break
+
+df['Duration_minutes'] = df['Duration'] / 60  # convert from seconds to minutes
+
+desc_stats = {
+    'Mean': df['Duration_minutes'].mean(),
+    'Standard Deviation': df['Duration_minutes'].std(),
+    '25th Percentile (Q1)': df['Duration_minutes'].quantile(0.25),
+    'Median (Q2)': df['Duration_minutes'].median(),
+    '75th Percentile (Q3)': df['Duration_minutes'].quantile(0.75)
+}
+
+desc_table = pd.DataFrame.from_dict(desc_stats, orient='index', columns=['Trip Duration (min)']).round(2)
+print("\nDescriptive Statistics Table:")
+print(desc_table)
+
+if 'Passholder Type' in df.columns:
+    passholder_counts = df['Passholder Type'].value_counts()
+    print("\nTrips by Passholder Type:")
+    print(passholder_counts)
+else:
+    print("\n'Passholder Type' column not found.")
 
 """# **3. Data Modeling**
 
@@ -147,18 +238,28 @@ from sklearn.metrics import (
     roc_auc_score
 )
 import joblib
+from sklearn.preprocessing import LabelEncoder
 
-# Filter dataset and drop rows with missing values
-df_model = df[['Trip Duration (min)', 'Start Hour', 'Trip Route Category', 'Passholder Type']].dropna()
+print(df.columns.tolist())
 
-# Binary classification: only Monthly Pass and Walk-up
+# Create 'Start Hour' from 'Start Time'
+df['Start Hour'] = pd.to_datetime(df['Start Time']).dt.hour
+
+# Filter relevant columns and drop rows with missing data
+df_model = df[['Duration_minutes', 'Start Hour', 'Trip Route Category', 'Passholder Type']].dropna()
+
+# Filter to just the two classes
 df_model = df_model[df_model['Passholder Type'].isin(['Walk-up', 'Monthly Pass'])]
 
+# Encode categorical column
+le = LabelEncoder()
+df_model['Trip Route Category'] = le.fit_transform(df_model['Trip Route Category'])
+
 # Define features and target
-X = df_model[['Trip Duration (min)', 'Start Hour', 'Trip Route Category']]
+X = df_model[['Duration_minutes', 'Start Hour', 'Trip Route Category']]
 y = df_model['Passholder Type']
 
-# Train-test split with stratification
+# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=42)
 
@@ -232,12 +333,21 @@ from sklearn.metrics import (
 )
 import joblib
 
-# Keep only needed columns and drop missing
-df_model = df[['Trip Duration (min)', 'Start Hour', 'Trip Route Category', 'Passholder Type']].dropna()
+# Extract 'Start Hour' from 'Start Time'
+df['Start Hour'] = pd.to_datetime(df['Start Time']).dt.hour
+
+# Keep only needed columns and drop rows with missing values
+df_model = df[['Duration_minutes', 'Start Hour', 'Trip Route Category', 'Passholder Type']].dropna()
+
+# Keep only relevant user types
 df_model = df_model[df_model['Passholder Type'].isin(['Walk-up', 'Monthly Pass'])]
 
+# Encode categorical feature
+le = LabelEncoder()
+df_model['Trip Route Category'] = le.fit_transform(df_model['Trip Route Category'])
+
 # Define features and target
-X = df_model[['Trip Duration (min)', 'Start Hour', 'Trip Route Category']]
+X = df_model[['Duration_minutes', 'Start Hour', 'Trip Route Category']]
 y = df_model['Passholder Type']
 
 # Train-test split with stratification
@@ -304,47 +414,161 @@ plt.show()
 joblib.dump(tree_pipe, 'decision_tree_model.pkl')
 print("Decision Tree model saved as 'decision_tree_model.pkl'")
 
-"""## **3.3 Figure 5: Model Comparison Chart**"""
+"""## **3.3 DATA MODEL 3**"""
+
+import pandas as pd
+import os
+import joblib
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, classification_report, confusion_matrix,
+    roc_curve, auc
+)
+
+# Convert Duration from seconds to minutes
+df['Duration_minutes'] = df['Duration'] / 60
+
+# Convert Start Time to datetime and extract hour
+df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
+df['Start_Hour'] = df['Start Time'].dt.hour
+
+# Filter to two primary user types
+df_model = df[df['Passholder Type'].isin(['Monthly Pass', 'Walk-up'])].copy()
+
+# One-hot encode Trip Route Category
+df_model = pd.get_dummies(df_model, columns=['Trip Route Category'], drop_first=True)
+
+# Drop rows with missing data in key columns
+df_model.dropna(subset=['Duration_minutes', 'Start_Hour'], inplace=True)
+
+# Optional: Preview cleaned data
+df_model[['Duration_minutes', 'Start_Hour', 'Passholder Type']].head()
+
+# Define features and binary target (Monthly Pass = 0, Walk-up = 1)
+X = df_model[['Duration_minutes', 'Start_Hour'] +
+             [col for col in df_model.columns if col.startswith('Trip Route Category_')]]
+y = df_model['Passholder Type'].map({'Monthly Pass': 0, 'Walk-up': 1})
+
+# Split into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, stratify=y, test_size=0.25, random_state=42
+)
+
+# Summary of data shapes
+print("X_train shape:", X_train.shape)
+print("y_train distribution:\n", y_train.value_counts())
+
+model_path = 'svm_model.pkl'
+
+if os.path.exists(model_path):
+    svm_pipeline = joblib.load(model_path)
+    print("Loaded pre-trained SVM model.")
+else:
+    svm_pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('svc', SVC(kernel='rbf', class_weight='balanced', probability=True, random_state=42))
+    ])
+    svm_pipeline.fit(X_train, y_train)
+    joblib.dump(svm_pipeline, model_path)
+    print("Trained and saved new SVM model.")
+
+# Predict class labels and probabilities
+y_pred_svm = svm_pipeline.predict(X_test)
+y_proba_svm = svm_pipeline.predict_proba(X_test)[:, 1]
+
+# Evaluation function
+def evaluate_model(y_true, y_pred, y_proba=None, label="Model"):
+    print(f"\n{label} Results")
+    print("Accuracy:       ", accuracy_score(y_true, y_pred))
+    print("Precision:      ", precision_score(y_true, y_pred, pos_label=1))
+    print("Recall:         ", recall_score(y_true, y_pred, pos_label=1))
+    print("F1 Score:       ", f1_score(y_true, y_pred, pos_label=1))
+    if y_proba is not None:
+        print("ROC AUC Score:  ", roc_auc_score(y_true, y_proba))
+    print("\nClassification Report:\n", classification_report(y_true, y_pred))
+
+# Run evaluation
+evaluate_model(y_test, y_pred_svm, y_proba_svm, label="SVM")
+
+# Compute ROC curve
+fpr, tpr, thresholds = roc_curve(y_test, y_proba_svm)
+roc_auc = auc(fpr, tpr)
+
+# Plot ROC curve
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC Curve (AUC = {roc_auc:.3f})')
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--', label='Random Guess')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate', fontsize=12)
+plt.ylabel('True Positive Rate', fontsize=12)
+plt.title('SVM ROC Curve', fontsize=14, fontweight='bold')
+plt.legend(loc='lower right')
+plt.grid(True, linestyle='--', alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+"""## **3.4 Model Comparison Chart**"""
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Define model performance values from your results
+# Define metric labels
 metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score', 'ROC AUC']
 
-logistic_scores = [0.754, 0.641, 0.579, 0.608, 0.796]
-tree_scores     = [0.736, 0.581, 0.711, 0.639, 0.806]
+# Updated scores
+logistic_scores = [0.749, 0.703, 0.440, 0.542, 0.760]
+tree_scores     = [0.739, 0.591, 0.724, 0.651, 0.814]
+svm_scores      = [0.751, 0.622, 0.660, 0.641, 0.809]
 
-# Create a DataFrame for plotting
+# Create DataFrame for plotting
 df_plot = pd.DataFrame({
     'Metric': metrics,
     'Logistic Regression': logistic_scores,
-    'Decision Tree': tree_scores
+    'Decision Tree': tree_scores,
+    'SVM': svm_scores
 })
 
-# Plot
-plt.figure(figsize=(10, 6))
-bar_width = 0.35
+# Plot settings
+plt.figure(figsize=(12, 6))
+bar_width = 0.25
 x = range(len(metrics))
 
-plt.bar([i - bar_width/2 for i in x], df_plot['Logistic Regression'], width=bar_width, label='Logistic Regression', color='#4B8BBE')
-plt.bar([i + bar_width/2 for i in x], df_plot['Decision Tree'], width=bar_width, label='Decision Tree', color='#306998')
+# Plot bars
+plt.bar([i - bar_width for i in x], df_plot['Logistic Regression'], width=bar_width, label='Logistic Regression', color='#4B8BBE')
+plt.bar(x, df_plot['Decision Tree'], width=bar_width, label='Decision Tree', color='#306998')
+plt.bar([i + bar_width for i in x], df_plot['SVM'], width=bar_width, label='SVM', color='#FFE873')
 
 # Add value labels
 for i in x:
-    plt.text(i - bar_width/2, df_plot['Logistic Regression'][i] + 0.01, f"{df_plot['Logistic Regression'][i]:.2f}", ha='center', fontsize=9)
-    plt.text(i + bar_width/2, df_plot['Decision Tree'][i] + 0.01, f"{df_plot['Decision Tree'][i]:.2f}", ha='center', fontsize=9)
+    plt.text(i - bar_width, df_plot['Logistic Regression'][i] + 0.01, f"{df_plot['Logistic Regression'][i]:.2f}", ha='center', fontsize=9)
+    plt.text(i, df_plot['Decision Tree'][i] + 0.01, f"{df_plot['Decision Tree'][i]:.2f}", ha='center', fontsize=9)
+    plt.text(i + bar_width, df_plot['SVM'][i] + 0.01, f"{df_plot['SVM'][i]:.2f}", ha='center', fontsize=9)
 
 # Styling
 plt.xticks(x, metrics, fontsize=11)
 plt.yticks(fontsize=11)
 plt.ylabel('Score', fontsize=12)
-plt.title('Figure 6: Comparison of Logistic Regression and Decision Tree Metrics', fontsize=14, fontweight='bold')
+plt.title('Figure 6: Comparison of Model Performance Metrics', fontsize=14, fontweight='bold')
 plt.ylim(0, 1)
 plt.legend()
-plt.grid(axis='y', linestyle='--', alpha=0.5)
+plt.grid(axis='y', linestyle='--', alpha=0.3)
 plt.tight_layout()
 
-# Show or save
+# Save and show
 plt.savefig('figure6_model_comparison.png', dpi=300)
 plt.show()
+
+"""**ENDLINE**"""
+
+# Save the notebook to HTML
+!jupyter nbconvert --to html /content/your_notebook_name.ipynb
+
+# Convert HTML to PDF (requires wkhtmltopdf or similar)
+!apt-get install -y wkhtmltopdf
+!wkhtmltopdf your_notebook_name.html your_notebook_name.pdf
